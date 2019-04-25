@@ -119,21 +119,21 @@ public class OpentracingTracerManager {
         // a non-null initial value.
 
         String appName = tracerContext.getAppName();
-        Tracer tracer = tracerContext.getTracer();
+        Tracer tracer;
         String tracerCase;
 
         // The app name and tracer should always be null when requesting
         // the tracer from a container filter, and should never be null
         // when requesting the tracer from a client filter.
 
-        if (tracer != null) {
+        if (tracerContext.isTracerSet()) {
+            tracer = tracerContext.getTracer();
             tracerCase = "previously stored for " + appName;
-
         } else {
+            
             appName = OpentracingUtils.lookupAppName();
             tracer = ensureTracer(appName);
             tracerContext.setTracer(appName, tracer);
-
             tracerCase = "newly stored for " + appName;
         }
 

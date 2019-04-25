@@ -33,10 +33,13 @@ public class OpentracingContext {
     /** <p>The trace which is active in the thread.</p> */
     private Tracer tracer;
 
+    private boolean isTracerSet = false;
+
     @Trivial
     public void setTracer(String appName, Tracer tracer) {
         this.appName = appName;
         this.tracer = tracer;
+        this.isTracerSet = true;
     }
 
     @Trivial
@@ -48,4 +51,10 @@ public class OpentracingContext {
     public Tracer getTracer() {
         return tracer;
     }
+
+    @Trivial
+    public boolean isTracerSet() {
+        return isTracerSet;
+    }
+
 }
