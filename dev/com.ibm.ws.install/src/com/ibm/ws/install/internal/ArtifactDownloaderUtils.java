@@ -65,7 +65,7 @@ public class ArtifactDownloaderUtils {
             future.get(); // do anything you need, e.g. isDone(), ...
           }
         } catch (InterruptedException | ExecutionException e) {
-          e.printStackTrace():
+          e.printStackTrace();
         }
 
         return result;

@@ -37,6 +37,11 @@ import java.util.logging.Logger;
 import com.ibm.ws.install.InstallException;
 import com.ibm.ws.install.internal.InstallLogUtils.Messages;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
+
 public class ArtifactDownloader {
 
     private static HashMap<String,String> checkSumCache = new HashMap <String,String>();
@@ -100,7 +105,41 @@ public class ArtifactDownloader {
             double individualSize = progressBar.getMethodIncrement("downloadArtifacts") / mavenCoords.size();
             progressBar.updateMethodMap("downloadArtifact", individualSize);
             logger.info(Messages.INSTALL_KERNEL_MESSAGES.getMessage("MSG_BEGINNING_DOWNLOAD_FEATURES"));
+
+            final ExecutorService executor = Executors.newFixedThreadPool(5); // it's just an arbitrary number
+            final List<Future<?>> futures = new ArrayList<>();
+            final String dloc = dLocation;
             for (String coords : mavenCoords) {
+              Future<?> future = executor.submit(() -> {
+                  
+                  try {
+                    synthesizeAndDownload(coords, "esa", dloc, repository, false);
+                    synthesizeAndDownload(coords, "pom", dloc, repository, false);
+                  } catch (InstallException e) {
+                    // TODO Auto-generated catch block
+                   e.printStackTrace();
+                  }
+                  
+
+                  // update progress bar, drain the downloadArtifacts total size
+                  updateProgress(individualSize);
+                  progressBar.updateMethodMap("downloadArtifacts", progressBar.getMethodIncrement("downloadArtifacts") - individualSize);
+                  progressBar.manuallyUpdate();
+                  fine("Finished downloading artifact: " + coords);
+                });
+              futures.add(future);
+            }
+    
+            try {
+              for (Future<?> future : futures) {
+                future.get(); 
+              }
+            } catch (InterruptedException | ExecutionException e) {
+              e.printStackTrace();
+            }
+
+
+            /*for (String coords : mavenCoords) {
                 synthesizeAndDownload(coords, "esa", dLocation, repository, false);
                 synthesizeAndDownload(coords, "pom", dLocation, repository, false);
 
@@ -109,7 +148,7 @@ public class ArtifactDownloader {
                 progressBar.updateMethodMap("downloadArtifacts", progressBar.getMethodIncrement("downloadArtifacts") - individualSize);
                 progressBar.manuallyUpdate();
                 fine("Finished downloading artifact: " + coords);
-            }
+            }*/
         }
     }
 
