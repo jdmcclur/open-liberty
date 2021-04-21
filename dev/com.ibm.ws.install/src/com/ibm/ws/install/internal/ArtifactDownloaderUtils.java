@@ -29,6 +29,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.ExecutionException;
+
 import javax.net.ssl.HttpsURLConnection;
 
 import com.ibm.ws.install.InstallException;
@@ -39,11 +44,30 @@ public class ArtifactDownloaderUtils {
 
     public static List<String> getMissingFiles(List<String> featureURLs, Map<String, Object> envMap) throws IOException {
         List<String> result = new ArrayList<String>();
+
+        final ExecutorService executor = Executors.newFixedThreadPool(20); // it's just an arbitrary number
+        final List<Future<?>> futures = new ArrayList<>();
         for (String url : featureURLs) {
-            if (!(exists(url, envMap) == HttpURLConnection.HTTP_OK)) {
+          Future<?> future = executor.submit(() -> {
+            try {
+              if (!(exists(url, envMap) == HttpURLConnection.HTTP_OK)) {
                 result.add(url);
+              }
+            } catch (IOException ioe) {
+              ioe.printStackTrace();
             }
+          });
+          futures.add(future);
         }
+
+        try {
+          for (Future<?> future : futures) {
+            future.get(); // do anything you need, e.g. isDone(), ...
+          }
+        } catch (InterruptedException | ExecutionException e) {
+          e.printStackTrace():
+        }
+
         return result;
     }
 

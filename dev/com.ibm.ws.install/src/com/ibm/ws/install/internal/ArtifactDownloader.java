@@ -31,12 +31,15 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 import java.util.logging.Logger;
 
 import com.ibm.ws.install.InstallException;
 import com.ibm.ws.install.internal.InstallLogUtils.Messages;
 
 public class ArtifactDownloader {
+
+    private static HashMap<String,String> checkSumCache = new HashMap <String,String>();
 
     private final int PROGRESS_CHUNK = 500000;
 
@@ -157,8 +160,8 @@ public class ArtifactDownloader {
             }
         }
         String[] checksumFormats = new String[3];
-        checksumFormats[0] = "SHA256";
-        checksumFormats[1] = "MD5";
+        checksumFormats[0] = "MD5";
+        checksumFormats[1] = "SHA256";
         checksumFormats[2] = "SHA1";
 
         try {
@@ -220,7 +223,10 @@ public class ArtifactDownloader {
     private boolean checksumIsAvailable(String urlLocation, String checksumFormat) {
         boolean result = true;
         try {
-            ArtifactDownloaderUtils.getMasterChecksum(urlLocation, checksumFormat);
+            if (checkSumCache.get(urlLocation) != null)
+              return true;
+            String checkSum = ArtifactDownloaderUtils.getMasterChecksum(urlLocation, checksumFormat);
+            checkSumCache.put(urlLocation,checkSum);
         } catch (IOException e) {
             result = false;
         }
@@ -237,7 +243,11 @@ public class ArtifactDownloader {
         }
         String checksumOrigin;
         try {
-            checksumOrigin = ArtifactDownloaderUtils.getMasterChecksum(urlLocation, checksumFormat);
+            checksumOrigin = checkSumCache.get(urlLocation);
+            if (checksumOrigin == null ) {
+              checksumOrigin = ArtifactDownloaderUtils.getMasterChecksum(urlLocation, checksumFormat);
+              checkSumCache.put(urlLocation,checksumOrigin);
+            }
         } catch (IOException e) {
             return true;
         }

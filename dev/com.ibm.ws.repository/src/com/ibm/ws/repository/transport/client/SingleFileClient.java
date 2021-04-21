@@ -63,7 +63,9 @@ public class SingleFileClient extends AbstractRepositoryClient implements Reposi
     private final File file;
     private long fileLastModified = 0;
     private long fileLastSize = 0;
-    private Map<String, JsonObject> assets;
+    private Map<String, Asset> assets=null;
+    private static HashMap<Long,Map> assetsCache = new HashMap<Long,Map>();;
+
     private AtomicInteger idCounter;
 
     /**
@@ -84,7 +86,17 @@ public class SingleFileClient extends AbstractRepositoryClient implements Reposi
      * <p>
      * This method will re-read the json file if it has not yet been read, or if it has changed since we last read it.
      */
-    private synchronized Map<String, JsonObject> getAssetMap() throws IOException {
+    private synchronized Map<String, Asset> getAssetMap() throws IOException {
+        try {
+          assets = assetsCache.get(file.length());
+        } catch (Exception e) {
+          e.printStackTrace();
+        }
+
+        if (assets != null){
+          return assets;
+        }
+
         if (!file.canRead()) {
             throw new IOException("Cannot read repository file: " + file.getAbsolutePath());
         } else if (assets == null || file.lastModified() != fileLastModified || file.length() != fileLastSize) {
@@ -94,29 +106,32 @@ public class SingleFileClient extends AbstractRepositoryClient implements Reposi
             fileLastSize = file.length();
 
             idCounter = new AtomicInteger(1);
-            assets = new HashMap<String, JsonObject>();
+            assets = new HashMap<String, Asset>();
             try (JsonReader reader = Json.createReader(new FileInputStream(file))) {
                 JsonArray assetList = reader.readArray();
                 for (JsonValue val : assetList) {
                     String id = Integer.toString(idCounter.getAndIncrement());
                     if (val.getValueType() == ValueType.OBJECT) {
-                        assets.put(id, (JsonObject) val);
+                        try {
+                          assets.put(id, DataModelSerializer.deserializeObject((JsonObject)val, Asset.class, Verification.VERIFY));
+                        } catch (BadVersionException e) {
+                          continue; // Skip anything invalid when returning all assets
+                        }
                     }
                 }
             }
         }
-
+        assetsCache.put(file.length(),assets);
         return assets;
 
     }
 
     @Override
     public Asset getAsset(String assetId) throws IOException, BadVersionException, RequestFailureException {
-        JsonObject assetJson = getAssetMap().get(assetId);
-        if (assetJson == null) {
+        Asset asset = getAssetMap().get(assetId);
+        if (asset == null) {
             throw new RequestFailureException(404, "Asset does not exist", file.toURI().toURL(), "Asset does not exist");
         }
-        Asset asset = DataModelSerializer.deserializeObject(assetJson, Asset.class, Verification.VERIFY);
         asset.set_id(assetId);
         addWlpInformation(asset);
         return asset;
@@ -126,18 +141,14 @@ public class SingleFileClient extends AbstractRepositoryClient implements Reposi
     public Collection<Asset> getAllAssets() throws IOException, RequestFailureException {
         ArrayList<Asset> result = new ArrayList<Asset>();
 
-        for (Entry<String, JsonObject> entry : getAssetMap().entrySet()) {
+        for (Entry<String, Asset> entry : getAssetMap().entrySet()) {
             if (entry.getValue() != null) {
-                try {
-                    Asset asset = DataModelSerializer.deserializeObject(entry.getValue(), Asset.class, Verification.VERIFY);
+                    Asset asset = entry.getValue();
                     asset.set_id(entry.getKey());
                     addWlpInformation(asset);
                     result.add(asset);
-                } catch (BadVersionException e) {
-                    continue; // Skip anything invalid when returning all assets
                 }
             }
-        }
 
         return result;
     }
@@ -165,17 +176,12 @@ public class SingleFileClient extends AbstractRepositoryClient implements Reposi
             throw new ClientFailureException("Asset id is not null when adding a new asset", asset.get_id());
         }
 
-        try {
-            Map<String, JsonObject> assetMap = getAssetMap();
-            JsonObject json = (JsonObject) DataModelSerializer.serializeAsJson(asset.createMinimalAssetForJSON());
+            Map<String, Asset> assetMap = getAssetMap();
             String id = Integer.toString(idCounter.getAndIncrement());
-            assetMap.put(id, json);
+            assetMap.put(id, asset);
             rewriteFile();
 
             return getAsset(id);
-        } catch (IllegalAccessException ex) {
-            throw new IOException("Unable to create JSON for asset", ex);
-        }
     }
 
     @Override
@@ -202,7 +208,7 @@ public class SingleFileClient extends AbstractRepositoryClient implements Reposi
 
     @Override
     public void deleteAssetAndAttachments(String assetId) throws IOException, RequestFailureException {
-        Map<String, JsonObject> assets = getAssetMap();
+        Map<String, Asset> assets = getAssetMap();
         if (assets.containsKey(assetId)) {
             assets.remove(assetId);
         }
@@ -232,9 +238,9 @@ public class SingleFileClient extends AbstractRepositoryClient implements Reposi
         JsonArrayBuilder jsonToStore = Json.createArrayBuilder();
 
         // Iterate through the assets in id order
-        Map<String, JsonObject> assetMap = assets == null ? Collections.<String, JsonObject> emptyMap() : assets;
+        Map<String, Asset> assetMap = assets == null ? Collections.<String, Asset> emptyMap() : assets;
         for (int i = 1; i < idCounter.get(); i++) {
-            JsonObject json = assetMap.get(Integer.toString(i));
+            JsonObject json = (JsonObject) DataModelSerializer.serializeAsJson(assetMap.get(Integer.toString(i)));
             if (json == null) {
                 jsonToStore.addNull();
             } else {
