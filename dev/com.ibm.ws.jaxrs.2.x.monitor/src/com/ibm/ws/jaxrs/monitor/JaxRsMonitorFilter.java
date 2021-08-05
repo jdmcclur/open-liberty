@@ -15,7 +15,6 @@ import java.lang.reflect.Method;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicLong;
 
 import javax.ws.rs.container.ContainerRequestContext;
 import javax.ws.rs.container.ContainerRequestFilter;
@@ -23,7 +22,6 @@ import javax.ws.rs.container.ContainerResponseContext;
 import javax.ws.rs.container.ContainerResponseFilter;
 import javax.ws.rs.container.ResourceInfo;
 import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MultivaluedMap;
 import javax.ws.rs.ext.Provider;
 
 import com.ibm.websphere.csi.J2EEName;
@@ -157,16 +155,16 @@ public class JaxRsMonitorFilter implements ContainerRequestFilter, ContainerResp
 
 				// Figure out min/max
 				if (elapsedTime >= 0) {
-					synchronized (this) {
-						if (elapsedTime > stats.getMinuteLatestMaximumDuration()) {
-							stats.updateMinuteLatestMaximumDuration(elapsedTime);
+            long minuteLatestMaximumDuration = stats.getMinuteLatestMaximumDuration();
+						if (elapsedTime > minuteLatestMaximumDuration) {
+							stats.compareAndUpdateMinuteLatestMaximumDuration(minuteLatestMaximumDuration, elapsedTime);
 						}
-
-						if (elapsedTime < stats.getMinuteLatestMinimumDuration()
-						        || stats.getMinuteLatestMinimumDuration() == 0L) {
-							stats.updateMinuteLatestMinimumDuration(elapsedTime);
+            
+            long minuteLatestMinimumDuration = stats.getMinuteLatestMinimumDuration();
+						if (elapsedTime < minuteLatestMinimumDuration
+						        || minuteLatestMinimumDuration == 0L) {
+							stats.compareAndUpdateMinuteLatestMinimumDuration(minuteLatestMinimumDuration, elapsedTime);
 						}
-					}
 				}
 			}
 		}
