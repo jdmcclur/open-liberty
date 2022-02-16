@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Iterator;
 import java.util.Set;
 
 import javax.security.auth.Subject;
@@ -884,6 +885,7 @@ public class WebAppSecurityCollaboratorImpl implements IWebAppSecurityCollaborat
     private void performDelegation(String servletName) {
 
         Subject delegationSubject = subjectManager.getCallerSubject();
+
         if (delegationSubject != null && delegationSubject.getPublicCredentials(WSCredential.class) != null
             && delegationSubject.getPublicCredentials(WSCredential.class).iterator() != null &&
             delegationSubject.getPublicCredentials(WSCredential.class).iterator().hasNext()) {
@@ -894,22 +896,7 @@ public class WebAppSecurityCollaboratorImpl implements IWebAppSecurityCollaborat
             } catch (CredentialDestroyedException e) {
             }
         }
-        ArrayList<String> delUsers = new ArrayList<String>();
-        if (delegationSubject != null) {
-            String buff = getSubjectToString(delegationSubject);
-            if (buff != null) {
-                int a = buff.indexOf("accessId");
-                if (a != -1) {
-                    buff = buff.substring(a + 9);
-                    a = buff.indexOf(",");
-                    if (a != -1) {
-                        buff = buff.substring(0, a);
-                        delUsers.add(buff);
-                    }
-                }
-
-            }
-        }
+        ArrayList<String> delUsers  = getDelegatedUsers(delegationSubject);
         SecurityMetadata secMetadata = getSecurityMetadata();
         if (secMetadata != null) {
             String roleName = secMetadata.getRunAsRoleForServlet(servletName);
@@ -922,19 +909,7 @@ public class WebAppSecurityCollaboratorImpl implements IWebAppSecurityCollaborat
                     AuthenticationService authService = securityService.getAuthenticationService();
                     delegationSubject = authService.delegate(roleName, getApplicationName());
                     if (delegationSubject != null) {
-                        String buff = getSubjectToString(delegationSubject);
-                        if (buff != null) {
-                            int a = buff.indexOf("accessId");
-                            if (a != -1) {
-                                buff = buff.substring(a + 9);
-                                a = buff.indexOf(",");
-                                if (a != -1) {
-                                    buff = buff.substring(0, a);
-                                    delUsers.add(buff);
-                                }
-                            }
-
-                        }
+                        delUsers.addAll(getDelegatedUsers(delegationSubject));
                     } else {
                         invalidUser = authService.getInvalidDelegationUser();
                         delUsers.add(invalidUser);
@@ -952,19 +927,7 @@ public class WebAppSecurityCollaboratorImpl implements IWebAppSecurityCollaborat
 
                 } catch (IllegalArgumentException e) {
                     if (delegationSubject != null) {
-                        String buff = getSubjectToString(delegationSubject);
-                        if (buff != null) {
-                            int a = buff.indexOf("accessId");
-                            if (a != -1) {
-                                buff = buff.substring(a + 9);
-                                a = buff.indexOf(",");
-                                if (a != -1) {
-                                    buff = buff.substring(0, a);
-                                    delUsers.add(buff);
-                                }
-                            }
-
-                        }
+                        delUsers.addAll(getDelegatedUsers(delegationSubject));
                     } else {
                         SecurityService securityService = securityServiceRef.getService();
                         AuthenticationService authService = securityService.getAuthenticationService();
@@ -986,6 +949,46 @@ public class WebAppSecurityCollaboratorImpl implements IWebAppSecurityCollaborat
             subjectManager.setInvocationSubject(delegationSubject);
         }
     }
+
+    private ArrayList<String> getDelegatedUsers(Subject delegationSubject) {
+        ArrayList<String> delUsers = new ArrayList<String>();
+        if (delegationSubject != null ) {
+            Iterator<Object> pubCreds = delegationSubject.getPublicCredentials().iterator();
+            while (pubCreds.hasNext()) {
+                String buff = pubCreds.next().toString();
+                if (buff != null) {
+                    int a = buff.indexOf("accessId");
+                    if (a != -1) {
+                        buff = buff.substring(a + 9);
+                        a = buff.indexOf(",");
+                        if (a != -1) {
+                            buff = buff.substring(0, a);
+                            delUsers.add(buff);
+                        }
+                    }
+                }
+            }
+
+            Iterator<Object> privCreds = delegationSubject.getPrivateCredentials().iterator();
+            while (privCreds.hasNext()) {
+                String buff = privCreds.next().toString();
+                if (buff != null) {
+                    int a = buff.indexOf("accessId");
+                    if (a != -1) {
+                        buff = buff.substring(a + 9);
+                        a = buff.indexOf(",");
+                        if (a != -1) {
+                            buff = buff.substring(0, a);
+                            delUsers.add(buff);
+                        }
+                    }
+                }
+            }
+        }
+
+        return delUsers;
+    }
+
 
     /**
      * This method does:
