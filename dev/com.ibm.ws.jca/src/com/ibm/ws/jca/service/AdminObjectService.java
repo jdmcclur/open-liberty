@@ -49,6 +49,8 @@ public class AdminObjectService implements ResourceFactory, ApplicationRecycleCo
     public static final String JNDI_NAME = "jndiName";
     public static final String ADMIN_OBJECT_PID = "com.ibm.ws.jca.adminObject.supertype";
     public static final String ADMIN_OBJECT = "adminObject";
+
+    private final Map<String, Object> resources = new ConcurrentHashMap<String, Object>();
     /**
      * Prefix for flattened config properties.
      */
@@ -92,7 +94,7 @@ public class AdminObjectService implements ResourceFactory, ApplicationRecycleCo
     /**
      * DS method to activate this component.
      * Best practice: this should be a protected method, not public or private
-     * 
+     *
      * @param context DeclarativeService defined/populated component context
      */
     @Trivial
@@ -129,26 +131,33 @@ public class AdminObjectService implements ResourceFactory, ApplicationRecycleCo
         if (trace && tc.isEntryEnabled())
             Tr.entry(this, tc, "createResource", refInfo);
         try {
-            BootstrapContextImpl bootstrapContext = bootstrapContextRef.getServiceWithException();
+            Object adminObject = resources.get(name);
+            if (adminObject == null) {
 
-            if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled())
-                Tr.debug(this, tc, "loading", adminObjectImplClassName);
-            Class<?> adminObjectClass = bootstrapContext.loadClass(adminObjectImplClassName);
-            ComponentMetaData cData = ComponentMetaDataAccessorImpl.getComponentMetaDataAccessor().getComponentMetaData();
-            String currentApp = null;
-            ResourceAdapterMetaData metadata = bootstrapContext.getResourceAdapterMetaData();
-            // cData is null when its not in an application thread
-            if (cData != null && cData != metadata) {
-                currentApp = cData.getJ2EEName().getApplication();
-                applications.add(cData.getJ2EEName().getApplication());
+                BootstrapContextImpl bootstrapContext = bootstrapContextRef.getServiceWithException();
+
+                if (TraceComponent.isAnyTracingEnabled() && tc.isDebugEnabled())
+                    Tr.debug(this, tc, "loading", adminObjectImplClassName);
+
+                Class<?> adminObjectClass = bootstrapContext.loadClass(adminObjectImplClassName);
+                ComponentMetaData cData = ComponentMetaDataAccessorImpl.getComponentMetaDataAccessor().getComponentMetaData();
+                String currentApp = null;
+                ResourceAdapterMetaData metadata = bootstrapContext.getResourceAdapterMetaData();
+                // cData is null when its not in an application thread
+                if (cData != null && cData != metadata) {
+                    currentApp = cData.getJ2EEName().getApplication();
+                    applications.add(cData.getJ2EEName().getApplication());
+                }
+                String adapterName = bootstrapContext.getResourceAdapterName();
+
+                if (metadata != null && metadata.isEmbedded() && cData != metadata) { // Metadata is null for SIB/WMQ. No check needed if called from activationSpec
+                    String embeddedApp = metadata.getJ2EEName().getApplication();
+                    Utils.checkAccessibility(name, adapterName, embeddedApp, currentApp, false);
+                }
+                adminObject = adminObjectClass.getConstructor().newInstance();
+                bootstrapContext.configure(adminObject, name, properties, null, null, null);
+                resources.put(name, adminObject);
             }
-            String adapterName = bootstrapContext.getResourceAdapterName();
-            if (metadata != null && metadata.isEmbedded() && cData != metadata) { // Metadata is null for SIB/WMQ. No check needed if called from activationSpec
-                String embeddedApp = metadata.getJ2EEName().getApplication();
-                Utils.checkAccessibility(name, adapterName, embeddedApp, currentApp, false);
-            }
-            Object adminObject = adminObjectClass.getConstructor().newInstance();
-            bootstrapContext.configure(adminObject, name, properties, null, null, null);
             return adminObject;
         } catch (Exception x) {
             throw x;
@@ -163,7 +172,7 @@ public class AdminObjectService implements ResourceFactory, ApplicationRecycleCo
     /**
      * DS method to deactivate this component.
      * Best practice: this should be a protected method, not public or private
-     * 
+     *
      * @param context DeclarativeService defined/populated component context
      */
     protected void deactivate(ComponentContext context) {
@@ -188,7 +197,7 @@ public class AdminObjectService implements ResourceFactory, ApplicationRecycleCo
 
     /**
      * Declarative Services method for setting the BootstrapContext reference
-     * 
+     *
      * @param ref reference to the service
      */
     protected void setBootstrapContext(ServiceReference<BootstrapContextImpl> ref) {
@@ -197,7 +206,7 @@ public class AdminObjectService implements ResourceFactory, ApplicationRecycleCo
 
     /**
      * Declarative Services method for unsetting the BootstrapContext reference
-     * 
+     *
      * @param ref reference to the service
      */
     protected void unsetBootstrapContext(ServiceReference<BootstrapContextImpl> ref) {
