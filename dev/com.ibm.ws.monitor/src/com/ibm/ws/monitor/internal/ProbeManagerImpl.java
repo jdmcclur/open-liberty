@@ -4,7 +4,7 @@
  * are made available under the terms of the Eclipse Public License 2.0
  * which accompanies this distribution, and is available at
  * http://www.eclipse.org/legal/epl-2.0/
- * 
+ *
  * SPDX-License-Identifier: EPL-2.0
  *
  * Contributors:
@@ -51,12 +51,18 @@ import com.ibm.websphere.ras.annotation.Sensitive;
 import com.ibm.ws.monitor.internal.bci.ClassAvailableTransformer;
 import com.ibm.ws.monitor.internal.bci.ProbeClassFileTransformer;
 
+import io.openliberty.checkpoint.spi.CheckpointHook;
+import io.openliberty.checkpoint.spi.CheckpointPhase;
+
 /**
  * Declarative services component that is responsible for tracking
  * monitoring components and activating probes of interest.
  */
 
 public class ProbeManagerImpl implements MonitorManager {
+
+    private static final String disableProbes = System.getProperty("disable.probes");
+    private static final String removeTransformersAtCheckpoint = System.getProperty("remove.transformers.at.checkpoint");
 
     private static final TraceComponent tc = Tr.register(ProbeManagerImpl.class);
     /**
@@ -175,6 +181,11 @@ public class ProbeManagerImpl implements MonitorManager {
      * @param bundleContext the bundleContext
      */
     synchronized void activate(ComponentContext componentContext) throws Exception {
+        if (disableProbes != null && disableProbes.equals("true")) {
+            System.out.println("disable probes");
+            return;
+        }
+
         this.componentContext = componentContext;
         this.classAvailableTransformer = new ClassAvailableTransformer(this, instrumentation, includeBootstrap);
         this.transformer = new ProbeClassFileTransformer(this, instrumentation, includeBootstrap);
@@ -202,13 +213,28 @@ public class ProbeManagerImpl implements MonitorManager {
         //RTC D89497 adding instrumentors moved below as the MonitoringUtility.loadMonitoringClasses
         //was resulting in loading classes and in turn getting called during with transform process which
         //might cause hang in some situations
+
+
         this.instrumentation.addTransformer(this.transformer, true);
         this.instrumentation.addTransformer(this.classAvailableTransformer);
+
         // We're active so if we have any listeners, we can run down the loaded
         // classes.
         for (Class<?> clazz : this.instrumentation.getAllLoadedClasses()) {
             classAvailable(clazz);
         }
+
+        CheckpointPhase.getPhase().addMultiThreadedHook(new CheckpointHook() {
+            @Override
+            public void prepare() {
+                if (removeTransformersAtCheckpoint !=null && removeTransformersAtCheckpoint.equals("true")) {
+                    System.out.println("prepare - remove transformers");
+                    instrumentation.removeTransformer(classAvailableTransformer);
+                    instrumentation.removeTransformer(transformer);
+                }
+            }
+        });
+
     }
 
     /**
@@ -552,6 +578,7 @@ public class ProbeManagerImpl implements MonitorManager {
 
         // Update the new class with the configured probes
         if (!getInterestedByClass(clazz).isEmpty()) {
+            System.out.println("ProbeManagerImpl.classAvailable, this.transformer.instrumentWithProbes:" + clazz);
             this.transformer.instrumentWithProbes(Collections.<Class<?>> singleton(clazz));
         }
     }
@@ -886,6 +913,9 @@ public class ProbeManagerImpl implements MonitorManager {
      */
     final void fireProbe(long probeId, @Sensitive Object instance, @Sensitive Object target, @Sensitive Object payload) {
         try {
+
+            System.out.println("fire! " + instance);
+
             //new Exception().printStackTrace();
             ProbeImpl probe = activeProbesById.get(probeId);
             ConcurrentMap<ProbeImpl, Set<ProbeListener>> listenersByProbe = this.listenersByProbe;
